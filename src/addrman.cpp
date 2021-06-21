@@ -312,7 +312,7 @@ bool CAddrMan::Add_(const CAddress& addr, const CNetAddr& source, int64_t nTimeP
         // do not update if the entry was already in the "tried" table
         if (pinfo->fInTried)
             return false;
-
+/*
         // do not update if the max reference count is reached
         if (pinfo->nRefCount == ADDRMAN_NEW_BUCKETS_PER_ADDRESS)
             return false;
@@ -323,6 +323,7 @@ bool CAddrMan::Add_(const CAddress& addr, const CNetAddr& source, int64_t nTimeP
             nFactor *= 2;
         if (nFactor > 1 && (insecure_rand.randrange(nFactor) != 0))
             return false;
+*/
     } else {
         pinfo = Create(addr, source, &nId);
         pinfo->nTime = std::max((int64_t)0, (int64_t)pinfo->nTime - nTimePenalty);
@@ -336,7 +337,7 @@ bool CAddrMan::Add_(const CAddress& addr, const CNetAddr& source, int64_t nTimeP
         bool fInsert = vvNew[nUBucket][nUBucketPos] == -1;
         if (!fInsert) {
             CAddrInfo& infoExisting = mapInfo[vvNew[nUBucket][nUBucketPos]];
-            if (infoExisting.IsTerrible() || (infoExisting.nRefCount > 1 && pinfo->nRefCount == 0)) {
+            if (infoExisting.IsTerrible() /* || (infoExisting.nRefCount > 1 && pinfo->nRefCount == 0)*/) {
                 // Overwrite the existing new table entry.
                 fInsert = true;
             }
