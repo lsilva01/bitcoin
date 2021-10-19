@@ -31,6 +31,7 @@
 #include <script/signingprovider.h>
 #include <script/standard.h>
 #include <uint256.h>
+#include <undo.h>
 #include <util/bip32.h>
 #include <util/moneystr.h>
 #include <util/strencodings.h>
@@ -43,14 +44,14 @@
 
 #include <univalue.h>
 
-static void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry, CChainState& active_chainstate)
+static void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry, CChainState& active_chainstate, const CTxUndo* txundo)
 {
     // Call into TxToUniv() in bitcoin-common to decode the transaction hex.
     //
     // Blockchain contextual information (confirmations and blocktime) is not
     // available to code in bitcoin-common, so we query them here and push the
     // data into the returned UniValue.
-    TxToUniv(tx, uint256(), entry, true, RPCSerializationFlags());
+    TxToUniv(tx, uint256(), entry, true, RPCSerializationFlags(), txundo);
 
     if (!hashBlock.IsNull()) {
         LOCK(cs_main);
@@ -137,6 +138,7 @@ static RPCHelpMan getrawtransaction()
                                      }},
                                  }},
                              }},
+                             {RPCResult::Type::NUM, "fee", /* optional */ true, "the transaction fee"},
                              {RPCResult::Type::STR_HEX, "blockhash", /* optional */ true, "the block hash"},
                              {RPCResult::Type::NUM, "confirmations", /* optional */ true, "The confirmations"},
                              {RPCResult::Type::NUM_TIME, "blocktime", /* optional */ true, "The block time expressed in " + UNIX_EPOCH_TIME},
@@ -210,9 +212,30 @@ static RPCHelpMan getrawtransaction()
         return EncodeHexTx(*tx, RPCSerializationFlags());
     }
 
+
+    auto mempool = node.mempool.get();
+    LOCK2(cs_main, mempool->cs);
+    CCoinsViewCache& viewChain = chainman.ActiveChainstate().CoinsTip();
+    CCoinsViewMemPool viewMempool(&viewChain, *mempool);
+
+    std::unique_ptr<CTxUndo> txundo(new CTxUndo());
+
+    if (!tx->IsCoinBase()) {
+        txundo->vprevout.reserve(tx->vin.size());
+        for (unsigned int i = 0; i < tx->vin.size(); i++) {
+            Coin coin;
+            const CTxIn& txin = tx->vin[i];
+            if (viewMempool.GetCoin(txin.prevout, coin)) {
+                txundo->vprevout.emplace_back(std::move(coin));
+            }
+        }
+    } else {
+        txundo = nullptr;
+    }
+
     UniValue result(UniValue::VOBJ);
     if (blockindex) result.pushKV("in_active_chain", in_active_chain);
-    TxToJSON(*tx, hash_block, result, chainman.ActiveChainstate());
+    TxToJSON(*tx, hash_block, result, chainman.ActiveChainstate(), txundo.get());
     return result;
 },
     };
